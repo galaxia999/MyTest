@@ -18,8 +18,8 @@ void SetALStatus(UINT8 alStatus, UINT16 alStatusCode)
 
    if (alStatusCode != 0xFFFF)
    {
-      Value = SWAPWORD(Value);
+      Value = (Value); /* 수정하였음 */
 
-      HW_EscWriteWord(Value,ESC_AL_STATUS_CODE_OFFSET);
+      HW_EscWriteWord(SWAWWORD(Value),ESC_AL_STATUS_CODE_OFFSET); /* 2번째 수정함 */
    }
 }
