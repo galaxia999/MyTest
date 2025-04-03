@@ -1,0 +1,110 @@
+void RUN_EmergencyStopMode(uI16 ax, uI16 lmStatus)
+{
+	FP32 ftmp=0;
+	TypeAxis *pAx = pAxis + ax;
+
+	switch (lmStatus) {
+		case LMS_ECOM_INIT: // 90 긴급 감속정지 추가된 기능, 예외처리는 모두 LMS_ECOM_STOP 천이됨.
+			if(!pAx->ecat_fault_delayStatus || pAx->Error) pAx->LMS_Status = LMS_ECOM_STOP; // 알람지연 상태가 아니면, 이미 서보알람이 발생하였다면
+			//20220817 else if ((!LMSFlag.PALLET_R && !LMSFlag.PALLET_L)) LMS_STATUS = LMS_ECOM_STOP;   // Carrier open
+			else if (MACRO_CHECK_AXIS_SERVO_OFF(ax)) pAx->LMS_Status = LMS_ECOM_STOP; //TC0720_2 서보오프상태일때는 1sec 지연후 알람발램 발생
+			else
+			{
+				if(1) { //if(init_wait_cnt++>3){
+					init_wait_cnt[ax] =0;
+
+					LMS_Target_velocity[ax] = 0; //목표속도 갱신
+
+					if(Para[ax][3][46].val){
+						ftmp = pAx->Kc_MMPS2RAD * (FP32)Para[ax][3][46].val * TS_VEL;
+						Delta_dcc[ax] = (ftmp <= 100000.0)? ftmp : 100000.0;
+						Delta_acc[ax] = Delta_dcc[ax];
+					}
+					else {
+						Delta_acc[ax] = Delta_dcc[ax] =  100000.0;
+					}
+
+					//20220720 속도명령을 파라메터값으로 계산하는 방법
+					//옵션 1 : 속도피드백 적용하는 방법
+					//vin_out=w_rad;
+
+					//옵션 2 : 속도명령을 적용하는 방법
+					//서보온 정지상태에서 현재속도 0(<2펄스 기준, 1pulse오차는 80mm/s로 계산됨)로 판단되는 경우 속도피드백을 적용한다.
+					//속도 이동 상태로 판단되면 속도명령 기준으로 감속적용한다.
+					//          문제점:이 경우 속도피드백과의 차이가 발생하거나
+					//          가감속구간인 경우 속도명령으로 재설정되면서 과속현상이 발생할 수 있다.
+#if(0)
+				 if (abs(w_rad_flt*Kc_RAD2MMPS) < 200) { vin_out = w_rad_flt; } //TC0720_1
+				 else {
+
+					if (LMSFlag.V_SELECT == 0) {   //속도 선택
+					   if(!MotorDirection) { vin_out = (LMS_DIR_VALUE)*LMS_vel_pre[0]; } //CW
+					   else                { vin_out = -(LMS_DIR_VALUE)*LMS_vel_pre[0]; } //CCW
+					}
+					else {
+						if(!MotorDirection) { vin_out = (LMS_DIR_VALUE)*LMS_vel_pre[1]; } //CW
+						else                { vin_out = -(LMS_DIR_VALUE)*LMS_vel_pre[1]; } //CCW
+					}
+				 }
+#endif
+
+					//옵션 3, TC0720_3 : 서보온 정지 혹은 구동상태에서 속도생셩 명령을 기준으로 감속정지하는 방법을 사용함.
+					PreProcess_flt[ax] = vin_out[ax];
+					pAx->w_ref = vin_out[ax];
+					w_deriv_flt_pre[ax][0] = w_deriv_flt_pre[ax][1] = pAx->w_rad_flt;
+
+					pAx->LMS_Status = LMS_ECOM_RUN;
+					SET_VEL_MODE(ax);
+				}
+			}
+			break;
+
+		case LMS_ECOM_RUN: // 91
+			if(!pAx->ecat_fault_delayStatus || pAx->Error) pAx->LMS_Status = LMS_ECOM_STOP; // 알람지연 상태가 아니면, 이미 서보알람이 발생하였다면
+			//20220817 else if ((!LMSFlag.PALLET_R && !LMSFlag.PALLET_L)) LMS_STATUS = LMS_ECOM_STOP;   // Carrier open
+			else if (MACRO_CHECK_AXIS_SERVO_OFF(ax) ) pAx->LMS_Status = LMS_ECOM_STOP;
+			else{
+				LMS_NormalPreset_EMG(ax);
+
+				//20250115 1 rad/s 이하 오차가 있음. if ( (sI32)(pAx->w_ref) == 0 ) { // w_ref 값 정수화
+				if ( fabs(pAx->w_ref) < (0.001 * pAx->Kc_MMPS2RAD) ) { // 속도0 정지 명령 판단: 0.001mm/s
+					pAx->LMS_Status = LMS_ECOM_STOP;
+					init_wait_cnt[ax] =0;
+				}
+			}
+			break;
+
+		case LMS_ECOM_STOP: // 92
+			//if (MACRO_CHECK_SERVO_OFF )   LMS_STATUS = LMS_VEL_READY; //E203 알람발생후 상태천이하므로 서보오프상태 체크하지 않음.
+
+			//TC0720_4: 긴급정지동안 다른 명령은 처리지 않는다.
+			//if (LMSFlag.HOME_MODE)   LMS_STATUS = LMS_HOME_READY;
+			//else if (LMSFlag.POSI_MODE)   LMS_STATUS = LMS_POS_READY;
+			//else if ((!LMSFlag.PALLET_R && !LMSFlag.PALLET_L)) LMS_STATUS = LMS_VEL_READY;
+			//else
+
+			//20220817 엔코더open시에 비상정지 시퀀스
+			//if ((!LMSFlag.PALLET_R && !LMSFlag.PALLET_L)) { init_wait_cnt = 0; } // 100ms timeout!!
+
+			{
+				if (init_wait_cnt[ax]++>10000){  //통신알람 발생시 긴급정지하고 100ms->1sec 이후 알람발생  // 1sec ,D7(250us*4000=1sec)
+					init_wait_cnt[ax] =0;
+
+					pAx->LMS_Status = LMS_VEL_READY;
+
+					pAx->mo_vcmd_zeroEnabled = 0; //disable
+					pAx->ecat_fault_delayTick = 0; //100ms 알람발생 시간지연 사용하지 않음.
+					pAx->ecat_fault_delayStatus = 0; //알람동작 지연기능 동작완료
+
+					pAx->Flag.pwm=INTERNAL_SV_OFF; //for TEST
+
+					ActionsOnAlarm_EmergencyStop(ax, pAx->mo_ServoErr_Backup);
+				}
+			}
+			break;
+
+		default:
+			break;
+	}
+	return;
+}
