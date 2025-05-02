@@ -2,12 +2,12 @@
 -------------------------------------------------------------------------------
 ## LMMT 입출력 신호 SPEC
 -------------------------------------------------------------------------------
-1. 물리신호 출력기능 추가 : TG_ON,SRDY, P_COM, V_COM  
-	LMS_IOMapping_TG_ON(ax); //MISO.1  
-	LMS_IOMapping_SRDY(ax); //MISO.2  
-	LMS_IOMapping_P_COM(ax);  
-	LMS_IOMapping_V_COM(ax);  
-	LMS_IOMapping_NEAR_AND_PHS(ax); //MISO.8 ~ MISO.13 and MISO.14  
+1. 물리신호 출력기능 추가: TG_ON,SRDY, P_COM, V_COM  
+	LMS_IOMapping_TG_ON(ax); //MISO.1
+	LMS_IOMapping_SRDY(ax); //MISO.2
+	LMS_IOMapping_P_COM(ax);
+	LMS_IOMapping_V_COM(ax);
+	LMS_IOMapping_NEAR_AND_PHS(ax); //MISO.8 ~ MISO.13 and MISO.14
 	LMS_IOMapping_SALM();
 	
 ------------------------------------------------------------------------------
